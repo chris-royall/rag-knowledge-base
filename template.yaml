@@ -1,0 +1,669 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: RAG Knowledge Base with OpenSearch and Bedrock
+
+Parameters:
+  Version:
+    Description: Application version
+    Type: String
+  
+  ApiVersion:
+    Description: Version of the API
+    Type: String
+    Default: v1
+  
+  Environment:
+    Description: Environment name
+    Type: String
+
+  StackName:
+    Description: Name of the stack
+    Type: String
+  
+  OpenSearchInstanceCount:
+    Type: Number
+    Description: Number of OpenSearch instances. Use 1 for single-AZ (dev), 2+ for multi-AZ (prod). Must be multiple of AvailabilityZoneCount when multi-AZ enabled.
+
+  OpenSearchInstanceType:
+    Type: String
+    Description: Instance type for OpenSearch nodes. t3.small for dev/testing, m6g.large+ for production workloads.
+
+  OpenSearchZoneAwarenessEnabled:
+    Type: String
+    AllowedValues: [true, false]
+    Description: Enable multi-AZ deployment for high availability. Increases cost but provides fault tolerance against AZ failures.
+  
+  OpenSearchMultiAZWithStandbyEnabled:
+    Type: String
+    AllowedValues: [true, false]
+    Description: Enable multi-AZ with standby. Only used when OpenSearchZoneAwarenessEnabled is true.
+
+  OpenSearchAvailabilityZoneCount:
+    Type: Number
+    Description: Number of AZs to distribute nodes across when multi-AZ is enabled. Only used when OpenSearchZoneAwarenessEnabled is true.
+  
+  OpenSearchEBSEnabled:
+    Type: String
+    AllowedValues: [true, false]
+    Description: Enable EBS storage for OpenSearch. If false, uses instance store (ephemeral). If true, requires volume type, size, IOPS, and throughput configuration.
+
+  OpenSearchEBSVolumeType:
+    Type: String
+    Description: EBS volume type for OpenSearch storage. Only used when OpenSearchEBSEnabled is true.
+
+  OpenSearchEBSVolumeSize:
+    Type: Number
+    Description: EBS volume size in GB for OpenSearch storage. Only used when OpenSearchEBSEnabled is true.
+
+  OpenSearchEBSIops:
+    Type: Number
+    Description: IOPS for EBS volumes (only for gp3, io1, io2). Only used when OpenSearchEBSEnabled is true.
+
+  OpenSearchEBSThroughput:
+    Type: Number
+    Description: Throughput in MB/s for EBS volumes (only for gp3). Only used when OpenSearchEBSEnabled is true.
+
+  BucketName:
+    Type: String
+    Description: Name of the existing S3 bucket where the knowledge base documents are stored
+
+  IndexName:
+    Type: String
+    Description: Name of the OpenSearch index
+
+  BedrockOpenSearchModel:
+    Description: Name of the Bedrock model to use for embedding
+    Type: String
+
+  BedrockKnowledgeBaseModel:
+    Description: Name of the Bedrock model to use for embedding
+    Type: String
+  
+  LogLevel:
+    Description: Log level for the API
+    Type: String
+
+  ChatBotRole:
+    Description: Role description of the chat bot
+    Type: String
+
+  ChatBotObjective:
+    Description: Primary objective of the chat bot
+    Type: String
+
+  ChatBotTone:
+    Description: Tone and personality of the chat bot
+    Type: String
+
+  ChatBotBehaviorRules:
+    Description: Behavior rules for the chat bot
+    Type: String
+
+  DocsBaseUrl:
+    Description: Base URL for the hosted knowledge base documents
+    Type: String
+
+Conditions:
+  IsMultiAZ: !Equals [!Ref OpenSearchZoneAwarenessEnabled, true]
+  IsOpenSearchEBSEnabled: !Equals [!Ref OpenSearchEBSEnabled, true]
+        
+Resources:
+  BedrockKnowledgeBaseLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/bedrock/${StackName}'
+      RetentionInDays: 14
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Version
+          Value: !Ref Version
+
+  OpenSearchLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/opensearch/${StackName}'
+      RetentionInDays: 14
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Version
+          Value: !Ref Version
+
+  IndexCreatorLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${StackName}-index-creator'
+      RetentionInDays: 14
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Version
+          Value: !Ref Version
+
+  OpenSearchLogResourcePolicy:
+    Type: AWS::Logs::ResourcePolicy
+    Properties:
+      PolicyName: !Sub '${StackName}-opensearch-logs-policy'
+      PolicyDocument: !Sub |
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "es.amazonaws.com"
+              },
+              "Action": [
+                "logs:PutLogEvents",
+                "logs:CreateLogGroup",
+                "logs:CreateLogStream"
+              ],
+              "Resource": "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/opensearch/${StackName}:*"
+            }
+          ]
+        }
+
+  BedrockKnowledgeBaseRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${StackName}-BedrockKnowledgeBaseSyncRole'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+      - PolicyName: !Sub '${StackName}-BedrockS3AccessPolicy'
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Sid: ReadFromS3
+              Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:GetObjectVersion
+                - s3:GetBucketLocation
+                - s3:ListBucket
+              Resource:
+                - !Sub arn:aws:s3:::${BucketName}-${Environment}
+                - !Sub arn:aws:s3:::${BucketName}-${Environment}/*
+      - PolicyName: !Sub '${StackName}-BedrockOpenSearchAccessPolicy'
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Sid: OpenSearchManaged
+              Effect: Allow
+              Action:
+                - es:ESHttpGet
+                - es:ESHttpHead
+                - es:ESHttpPost
+                - es:ESHttpPut
+                - es:ESHttpDelete
+                - es:DescribeDomain
+                - es:DescribeElasticsearchDomain
+              Resource:
+                - !Sub 'arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/${StackName}/*'
+                - !Sub 'arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/${StackName}'
+      - PolicyName: !Sub '${StackName}-BedrockCloudWatchAccessPolicy'
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Sid: BedrockInvoke
+              Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource: !Sub "arn:aws:bedrock:${AWS::Region}::foundation-model/${BedrockOpenSearchModel}"
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Version
+          Value: !Ref Version
+
+  IndexCreatorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: OpenSearchAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - es:ESHttpGet
+                  - es:ESHttpPost
+                  - es:ESHttpPut
+                  - es:ESHttpDelete
+                Resource:
+                  - !Sub 'arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/${StackName}/*'
+                  - !Sub 'arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/${StackName}'
+        - PolicyName: CloudWatchLogsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt IndexCreatorLogGroup.Arn
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Version
+          Value: !Ref Version
+
+  OpenSearchDomain:
+    Type: AWS::OpenSearchService::Domain
+    DependsOn: OpenSearchLogResourcePolicy
+    Properties:
+      DomainName: !Sub '${StackName}'
+      EngineVersion: 'OpenSearch_3.1'
+      ClusterConfig:
+        InstanceCount: !Ref OpenSearchInstanceCount
+        InstanceType: !Ref OpenSearchInstanceType
+        MultiAZWithStandbyEnabled: !If 
+          - IsMultiAZ
+          - !Ref OpenSearchMultiAZWithStandbyEnabled
+          - false
+        ZoneAwarenessEnabled: !Ref OpenSearchZoneAwarenessEnabled
+        ZoneAwarenessConfig: !If 
+          - IsMultiAZ
+          - AvailabilityZoneCount: !Ref OpenSearchAvailabilityZoneCount
+          - !Ref "AWS::NoValue"
+      EBSOptions:
+        EBSEnabled: !Ref OpenSearchEBSEnabled
+        VolumeType: !If
+          - IsOpenSearchEBSEnabled
+          - !Ref OpenSearchEBSVolumeType
+          - !Ref "AWS::NoValue"
+        VolumeSize: !If
+          - IsOpenSearchEBSEnabled
+          - !Ref OpenSearchEBSVolumeSize
+          - !Ref "AWS::NoValue"
+        Iops: !If
+          - IsOpenSearchEBSEnabled
+          - !Ref OpenSearchEBSIops
+          - !Ref "AWS::NoValue"
+        Throughput: !If
+          - IsOpenSearchEBSEnabled
+          - !Ref OpenSearchEBSThroughput
+          - !Ref "AWS::NoValue"
+      EncryptionAtRestOptions:
+        Enabled: true
+      NodeToNodeEncryptionOptions:
+        Enabled: true
+      DomainEndpointOptions:
+        EnforceHTTPS: true
+        TLSSecurityPolicy: Policy-Min-TLS-1-2-2019-07
+      LogPublishingOptions:
+        SEARCH_SLOW_LOGS:
+          CloudWatchLogsLogGroupArn: !GetAtt OpenSearchLogGroup.Arn
+          Enabled: true
+        INDEX_SLOW_LOGS:
+          CloudWatchLogsLogGroupArn: !GetAtt OpenSearchLogGroup.Arn
+          Enabled: true
+        ES_APPLICATION_LOGS:
+          CloudWatchLogsLogGroupArn: !GetAtt OpenSearchLogGroup.Arn
+          Enabled: true
+      AccessPolicies:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !GetAtt BedrockKnowledgeBaseRole.Arn
+            Action: 
+              - 'es:ESHttpGet'
+              - 'es:ESHttpPost'
+              - 'es:ESHttpPut'
+              - 'es:ESHttpDelete'
+            Resource: !Sub 'arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/${StackName}/*'
+          - Effect: Allow
+            Principal:
+              AWS: !GetAtt IndexCreatorRole.Arn
+            Action: 
+              - 'es:ESHttpGet'
+              - 'es:ESHttpPost'
+              - 'es:ESHttpPut'
+              - 'es:ESHttpDelete'
+            Resource: !Sub 'arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/${StackName}/*'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Version
+          Value: !Ref Version
+
+  IndexCreatorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${StackName}-index-creator'
+      Runtime: python3.11
+      Handler: index.lambda_handler
+      Role: !GetAtt IndexCreatorRole.Arn
+      Timeout: 60
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import cfnresponse
+          import urllib3
+          from botocore.auth import SigV4Auth
+          from botocore.awsrequest import AWSRequest
+
+          def lambda_handler(event, context):
+              try:
+                  endpoint = event['ResourceProperties']['Endpoint']
+                  index_name = event['ResourceProperties']['IndexName']
+                  
+                  # Index configuration embedded directly
+                  index_config = {
+                      "settings": {
+                          "index.knn": "true",
+                          "number_of_shards": 1,
+                          "knn.algo_param.ef_search": 512,
+                          "number_of_replicas": 0
+                      },
+                      "mappings": {
+                          "properties": {
+                              "vector": {
+                                  "type": "knn_vector",
+                                  "dimension": 1024,
+                                  "method": {
+                                      "name": "hnsw",
+                                      "engine": "faiss",
+                                      "space_type": "l2"
+                                  }
+                              },
+                              "text": {
+                                  "type": "text"
+                              },
+                              "text-metadata": {
+                                  "type": "text"
+                              }
+                          }
+                      }
+                  }
+                  
+                  if event['RequestType'] in ['Create', 'Update']:
+                      session = boto3.Session()
+                      credentials = session.get_credentials()
+                      region = session.region_name
+                      
+                      url = f'https://{endpoint}/{index_name}'
+                      
+                      if event['RequestType'] == 'Update':
+                          # Check if index exists and delete it
+                          check_request = AWSRequest(method='HEAD', url=url)
+                          SigV4Auth(credentials, 'es', region).add_auth(check_request)
+                          
+                          http = urllib3.PoolManager()
+                          response = http.request(check_request.method, check_request.url, headers=dict(check_request.headers))
+                          
+                          if response.status == 200:
+                              delete_request = AWSRequest(method='DELETE', url=url)
+                              SigV4Auth(credentials, 'es', region).add_auth(delete_request)
+                              http.request(delete_request.method, delete_request.url, headers=dict(delete_request.headers))
+                      
+                      # Create index
+                      create_request = AWSRequest(method='PUT', url=url, data=json.dumps(index_config))
+                      create_request.headers['Content-Type'] = 'application/json'
+                      SigV4Auth(credentials, 'es', region).add_auth(create_request)
+                      
+                      http = urllib3.PoolManager()
+                      response = http.request(create_request.method, create_request.url, 
+                                            body=create_request.body, headers=dict(create_request.headers))
+                      
+                      if response.status in [200, 201]:
+                          cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                      else:
+                          print(f"Failed to create index: {response.status} {response.data}")
+                          cfnresponse.send(event, context, cfnresponse.FAILED, {})
+                  else:
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                      
+              except Exception as e:
+                  print(f"Error: {str(e)}")
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {})
+      MemorySize: 128
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Version
+          Value: !Ref Version
+      ReservedConcurrentExecutions: 1
+  
+  CreateIndex:
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken: !GetAtt IndexCreatorFunction.Arn
+      Endpoint: !GetAtt OpenSearchDomain.DomainEndpoint
+      IndexName: !Ref IndexName
+      ConfigHash: !Base64 
+        Fn::Sub: |
+          ${IndexName}
+
+  BedrockKnowledgeBase:
+    Type: "AWS::Bedrock::KnowledgeBase"
+    Description: Bedrock Knowledge Base for RAG
+    DependsOn: CreateIndex
+    Properties:
+      Name: !Sub '${StackName}-knowledge-base'
+      StorageConfiguration:
+        OpensearchManagedClusterConfiguration:
+          DomainArn: !GetAtt OpenSearchDomain.DomainArn
+          DomainEndpoint: !Sub 'https://${OpenSearchDomain.DomainEndpoint}'
+          VectorIndexName: !Ref IndexName
+          FieldMapping:
+            TextField: "text"
+            MetadataField: "text-metadata"
+            VectorField: "vector"
+        Type: "OPENSEARCH_MANAGED_CLUSTER"
+      KnowledgeBaseConfiguration:
+        Type: "VECTOR"
+        VectorKnowledgeBaseConfiguration:
+          EmbeddingModelArn: !Sub "arn:aws:bedrock:${AWS::Region}::foundation-model/${BedrockOpenSearchModel}"
+      RoleArn: !GetAtt BedrockKnowledgeBaseRole.Arn
+      Tags:
+        Environment: !Ref Environment
+        Version: !Ref Version
+
+  BedrockDataSource:
+    Type: "AWS::Bedrock::DataSource"
+    Properties:
+      Name: !Sub '${StackName}-data-source'
+      DataDeletionPolicy: "DELETE"
+      KnowledgeBaseId:
+        Ref: BedrockKnowledgeBase
+      VectorIngestionConfiguration:
+        ChunkingConfiguration:
+          ChunkingStrategy: "FIXED_SIZE"
+          FixedSizeChunkingConfiguration:
+            OverlapPercentage: 20
+            MaxTokens: 512
+      DataSourceConfiguration:
+        Type: "S3"
+        S3Configuration:
+          BucketArn: !Sub 'arn:aws:s3:::${BucketName}-${Environment}'
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${StackName}-lambda-execution-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Version
+          Value: !Ref Version
+      
+  LambdaBedrockPolicy:
+    Type: AWS::IAM::RolePolicy
+    Properties:
+      PolicyName: !Sub '${StackName}-lambda-bedrock-policy'
+      RoleName: !Ref LambdaExecutionRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - bedrock:Retrieve
+              - bedrock:RetrieveAndGenerate
+              - bedrock:InvokeModel
+            Resource:
+              - !Sub 'arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:knowledge-base/${BedrockKnowledgeBase}'
+              - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/${BedrockKnowledgeBaseModel}'
+        
+  LambdaCloudWatchLogsPolicy:
+    Type: AWS::IAM::RolePolicy
+    Properties:
+      PolicyName: !Sub '${StackName}-lambda-cloudwatch-logs-policy'
+      RoleName: !Ref LambdaExecutionRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AWS::StackName}-*"
+
+  BedrockLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${StackName}-bedrock-function'
+      RetentionInDays: 14
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Version
+          Value: !Ref Version
+
+  BedrockFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${StackName}-bedrock-function'
+      Runtime: python3.13
+      Handler: bedrock_function.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+      MemorySize: 128
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref BucketName
+          KNOWLEDGE_BASE_ID: !Ref BedrockKnowledgeBase
+          MODEL_ARN: !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/${BedrockKnowledgeBaseModel}'
+          LOG_LEVEL: !Ref LogLevel
+          CHAT_BOT_ROLE: !Ref ChatBotRole
+          CHAT_BOT_OBJECTIVE: !Ref ChatBotObjective
+          CHAT_BOT_TONE: !Ref ChatBotTone
+          CHATBOT_BEHAVIOR_RULES: !Ref ChatBotBehaviorRules
+          DOCS_BASE_URL: !Ref DocsBaseUrl
+      Code:
+        ZipFile: |
+          import json
+          def lambda_handler(event, context):
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps('Placeholder function - update with make update-function')
+              }
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Version
+          Value: !Ref Version
+              
+  BedrockApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub '${StackName}-api'
+      ProtocolType: HTTP
+      Description: Bedrock API
+      CorsConfiguration:
+        AllowHeaders:
+          - Content-Type
+        AllowMethods:
+          - POST
+        AllowOrigins:
+          - '*'
+        ExposeHeaders:
+          - Content-Type
+        MaxAge: 300
+      Tags:
+        Environment: !Ref Environment
+        Version: !Ref Version
+              
+  BedrockApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    DependsOn: BedrockRoute
+    Properties:
+      ApiId: !Sub '${BedrockApi}'
+      StageName: !Ref ApiVersion
+      AutoDeploy: true
+      RouteSettings:
+        'POST /chat':
+          ThrottlingRateLimit: 10
+          ThrottlingBurstLimit: 20
+      Tags:
+        Environment: !Ref Environment
+        Version: !Ref Version
+  
+  BedrockRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Sub '${BedrockApi}'
+      RouteKey: 'POST /chat'
+      Target: !Sub integrations/${BedrockIntegration}
+
+  BedrockIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Sub '${BedrockApi}'
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${BedrockFunction.Arn}/invocations
+      PayloadFormatVersion: '2.0'
+      IntegrationMethod: POST
+
+  BedrockLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref BedrockFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${BedrockApi}/*/POST/chat
+
+Outputs:
+  KnowledgeBaseId:
+    Description: Bedrock Knowledge Base ID
+    Value: !Ref BedrockKnowledgeBase
+    Export:
+      Name: !Sub '${AWS::StackName}-KnowledgeBaseId'
+
+  BedrockFunctionArn:
+    Description: Bedrock Function ARN
+    Value: !GetAtt BedrockFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-BedrockFunctionArn'
+
+  BedrockApiEndpoint:
+    Description: Bedrock API Endpoint
+    Value: !Sub 'https://${BedrockApi}.execute-api.${AWS::Region}.amazonaws.com/${ApiVersion}/chat'
+    Export:
+      Name: !Sub '${AWS::StackName}-BedrockApiEndpoint'
