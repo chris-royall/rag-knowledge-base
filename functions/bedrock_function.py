@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 # RAG Knowledge Base Lambda Function
-# Version: 1.0.0
+# Version: 1.0.1
 # Author: Christopher Royall
 # Description: Bedrock-powered chat API handler for RAG system
 
@@ -135,6 +135,7 @@ def lambda_handler(event, context):
             logger.info(f"Found {len(citations)} citation groups")
             for citation_group in citations:
                 retrieved_refs = citation_group.get("retrievedReferences", [])
+                logger.debug(f"Retrieved references: {json.dumps(retrieved_refs, indent=2)}")
                 for ref in retrieved_refs:
                     uri = ref.get("location", {}).get("s3Location", {}).get("uri")
                     if uri:
@@ -142,7 +143,9 @@ def lambda_handler(event, context):
                         filename = uri.replace(f"s3://{bucket_name}", "").split("/")[-1].replace(".md", "")
                         # Combine with base URL
                         full_url = f"{docs_base_url}/{filename}"
-                        all_full_urls.append(full_url)
+                        # Only add if new
+                        if full_url not in all_full_urls:
+                            all_full_urls.append(full_url)
                 
         logger.info("Returning successful response")
         return {
