@@ -76,6 +76,9 @@ deploy:
 			ChatBotTone=$(CHAT_BOT_TONE) \
 			ChatBotBehaviorRules=$(CHATBOT_BEHAVIOR_RULES) \
 			DocsBaseUrl=$(DOCS_BASE_URL) \
+			AuthorizationEnabled=$(AUTHORIZATION_ENABLED) \
+			UserPoolId=$(USER_POOL_ID) \
+			UserPoolClientId=$(USER_POOL_CLIENT_ID)
 		$(AWS_CLI_PROFILE) >/dev/null 2>&1
 	@echo "Stack deployment complete"
 

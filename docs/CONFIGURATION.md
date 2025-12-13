@@ -83,6 +83,12 @@ OPEN_SEARCH_INSTANCE_COUNT=2
 ### Application Configuration
 - **BUCKET_NAME**: S3 bucket for knowledge base documents
 - **INDEX_NAME**: OpenSearch index name for vectors
+- **LOG_LEVEL**: Application logging level (INFO, DEBUG, ERROR)
+
+### Authorization Configuration
+- **AUTHORIZATION_ENABLED**: Enable/disable Cognito authorization (true/false)
+- **USER_POOL_ID**: Cognito User Pool ID (required when authorization enabled)
+- **USER_POOL_CLIENT_ID**: Cognito App Client ID (required when authorization enabled)
 
 ### Bedrock Models
 - **BEDROCK_OPENSEARCH_MODEL**: Embedding model for converting text to vectors
@@ -111,6 +117,9 @@ OPEN_SEARCH_INSTANCE_TYPE=t3.small.search
 OPEN_SEARCH_ZONE_AWARENESS_ENABLED=false
 OPEN_SEARCH_EBS_VOLUME_SIZE=10
 
+# No authorization for internal development
+AUTHORIZATION_ENABLED=false
+
 # Development chatbot personality
 CHAT_BOT_ROLE="Development Documentation Assistant"
 CHAT_BOT_TONE="Casual and helpful for internal team use"
@@ -132,6 +141,11 @@ OPEN_SEARCH_ZONE_AWARENESS_ENABLED=true
 OPEN_SEARCH_MULTI_AZ_WITH_STANDBY_ENABLED=true
 OPEN_SEARCH_AVAILABILITY_ZONE_COUNT=3
 OPEN_SEARCH_EBS_VOLUME_SIZE=100
+
+# Cognito authorization for production security
+AUTHORIZATION_ENABLED=true
+USER_POOL_ID=us-west-2_ABCDEF123
+USER_POOL_CLIENT_ID=1234abcd5678efghijkl9012
 
 # Professional chatbot personality
 CHAT_BOT_ROLE="Customer Support Documentation Assistant"
@@ -161,6 +175,16 @@ CHATBOT_BEHAVIOR_RULES="Provide step-by-step solutions when available. Always in
 The system includes built-in validation to prevent common configuration errors:
 
 - **Multi-AZ Validation**: Automatically checks that instance count ≥2 when multi-AZ is enabled
+- **Authorization Validation**: When `AUTHORIZATION_ENABLED=true`, both `USER_POOL_ID` and `USER_POOL_CLIENT_ID` must be provided
 - **Template Validation**: `make validate` checks CloudFormation template syntax
 - **AWS Credentials**: `make check-aws` verifies AWS CLI configuration
 - **Parameter Consistency**: CloudFormation validates parameter combinations
+
+## Cognito Setup Requirements
+
+When enabling authorization (`AUTHORIZATION_ENABLED=true`), you must create the Cognito resources **before deployment**:
+
+1. **Create Cognito User Pool**: Set up authentication policies, password requirements, and user attributes
+2. **Create App Client**: Configure client settings for JWT token generation
+3. **Note the IDs**: Copy the User Pool ID and App Client ID to your configuration file
+4. **Deploy the stack**: The API Gateway will automatically configure JWT authorization using your Cognito settings
