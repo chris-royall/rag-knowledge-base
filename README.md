@@ -95,6 +95,7 @@ graph TB
 - AWS CLI configured with appropriate permissions
 - Make utility installed
 - S3 bucket with your documents
+- Cognito User Pool and App Client (if enabling authorization)
 
 ### Deployment
 
@@ -118,6 +119,15 @@ graph TB
 
 ### Usage
 
+**With Cognito Authorization (when enabled):**
+```bash
+curl -X POST https://your-api-id.execute-api.region.amazonaws.com/chat \
+  -H 'Authorization: Bearer <ACCESS_TOKEN>'
+  -H "Content-Type: application/json" \
+  -d '{"message": "What is the main topic of the documentation?"}'
+```
+
+**Without Authorization (when disabled):**
 ```bash
 curl -X POST https://your-api-id.execute-api.region.amazonaws.com/chat \
   -H "Content-Type: application/json" \

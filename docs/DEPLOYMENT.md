@@ -5,6 +5,7 @@
 - AWS CLI configured with appropriate permissions
 - Make utility installed
 - S3 bucket with your documents
+- Cognito User Pool and App Client (if enabling authorization)
 
 ## Quick Deployment
 
@@ -46,7 +47,15 @@ make api-endpoint ENV=<env>  # Display API endpoint URL
 
 ## Usage Examples
 
-### Basic API Call
+### API Call with Cognito Authorization
+```bash
+curl -X POST https://your-api-id.execute-api.region.amazonaws.com/chat \
+  -H 'Authorization: Bearer <ACCESS_TOKEN>' \
+  -H "Content-Type: application/json" \
+  -d '{"message": "What is the main topic of the documentation?"}'
+```
+
+### API Call without Authorization
 ```bash
 curl -X POST https://your-api-id.execute-api.region.amazonaws.com/chat \
   -H "Content-Type: application/json" \
@@ -72,6 +81,7 @@ curl -X POST https://your-api-id.execute-api.region.amazonaws.com/chat \
 2. **AWS Credentials**: Run `make check-aws` to verify configuration
 3. **S3 Bucket**: Ensure bucket exists before deployment
 4. **Manual Sync**: Documents won't be available until manual sync is performed
+5. **Authorization Issues**: Ensure Cognito User Pool and App Client exist before deployment and verify `USER_POOL_ID` and `USER_POOL_CLIENT_ID` are correct
 
 ### Validation Commands
 

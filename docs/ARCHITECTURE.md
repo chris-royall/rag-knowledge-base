@@ -139,6 +139,7 @@ OpenSearch Index Setup → Bedrock Knowledge Base Configuration
 - **Encryption**: Data encrypted at rest and in transit (TLS 1.2+)
 - **IAM Roles**: Fine-grained permissions for each service
 - **HTTPS Only**: API Gateway enforces HTTPS
+- **Optional JWT Authorization**: Cognito-based authentication for API access
 - **CloudWatch Logging**: Comprehensive audit trails
 - **Resource-level Access Control**: Specific permissions for OpenSearch and Bedrock resources
 - **No Public Access**: OpenSearch domain accessible only via IAM roles
