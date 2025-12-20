@@ -5,9 +5,6 @@ ENV ?= local
 CONFIG_FILE := config/config.$(ENV).env
 include $(CONFIG_FILE)
 
-# Read version from VERSION file
-VERSION := $(shell cat VERSION 2>/dev/null)
-
 # Configuration
 TEMPLATE_FILE := template.yaml
 LAMBDA_ZIP := bedrock_function.zip
@@ -53,9 +50,10 @@ deploy:
 		--region $(REGION) \
 		--capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
 		--parameter-overrides \
-			Version=$(VERSION) \
 			StackName=$(STACK_NAME) \
 			Environment=$(ENV) \
+			Application=$(APPLICATION) \
+			Owner=$(OWNER) \
 			BucketName=$(BUCKET_NAME) \
 			IndexName=$(INDEX_NAME) \
 			LogLevel=$(LOG_LEVEL) \
