@@ -31,9 +31,6 @@ A production-ready Retrieval-Augmented Generation (RAG) system built on AWS that
 
 ```mermaid
 graph TB
-    %% Sync Process
-    Sync[⚠️ Action Required<br/>Sync S3 to OpenSearch]
-    
     %% User and External
     User[👤 User] --> API[🌐 API Gateway<br/>HTTP API]
     Docs[📄 Knowledge Base<br/>Documents] --> S3[🪣 S3 Bucket<br/>Document Storage]
@@ -61,9 +58,6 @@ graph TB
     OpenSearch -.-> CloudWatch
     Bedrock -.-> CloudWatch
     
-    %% Manual Sync Connections
-    Sync -.-> Bedrock
-    
     %% Styling
     classDef userClass fill:#e1f5fe,stroke:#01579b,stroke-width:2px
     classDef awsService fill:#fff3e0,stroke:#e65100,stroke-width:2px
@@ -71,7 +65,6 @@ graph TB
     classDef storage fill:#e8f5e8,stroke:#1b5e20,stroke-width:2px
     classDef monitoring fill:#ffebee,stroke:#b71c1c,stroke-width:2px
     classDef docsClass fill:#fff9c4,stroke:#f57f17,stroke-width:2px
-    classDef manualClass fill:#ffcdd2,stroke:#d32f2f,stroke-width:2px
     
     class User userClass
     class API,Lambda,IndexCreator awsService
@@ -79,7 +72,6 @@ graph TB
     class S3,OpenSearch storage
     class CloudWatch monitoring
     class Docs docsClass
-    class Sync manualClass
 ```
 
 ## Visual Documentation
@@ -99,23 +91,9 @@ graph TB
 
 ### Deployment
 
-1. **Configure your environment**:
-   ```bash
-   cp config/config.example.env config/config.<environment>.env
-   # Edit config.<environment>.env with your settings
-   ```
-
-2. **Deploy the complete stack**:
-   ```bash
-   make all ENV=<environment>
-   ```
-
-3. **Get your API endpoint**:
-   ```bash
-   make api-endpoint ENV=<environment>
-   ```
-
-4. **⚠️ Manual Sync Required**: After deployment, manually sync your S3 documents to the Bedrock Knowledge Base using AWS Console or AWS CLI.
+  ```bash
+  make all ENV=<environment>
+  ```
 
 ### Usage
 

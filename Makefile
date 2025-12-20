@@ -16,7 +16,7 @@ BUILD_DIR := build
 AWS_CLI_PROFILE := $(if $(AWS_PROFILE),--profile $(AWS_PROFILE),)
 
 ## Deploy everything (initial deployment)
-all: clean check-aws validate deploy build update-function status api-endpoint
+all: clean check-aws validate deploy knowledge-base-sync build update-function status api-endpoint
 	@echo "Complete deployment finished"
 
 ## Clean build artifacts
@@ -76,9 +76,53 @@ deploy:
 			DocsBaseUrl=$(DOCS_BASE_URL) \
 			AuthorizationEnabled=$(AUTHORIZATION_ENABLED) \
 			UserPoolId=$(USER_POOL_ID) \
-			UserPoolClientId=$(USER_POOL_CLIENT_ID)
+			UserPoolClientId=$(USER_POOL_CLIENT_ID) \
 		$(AWS_CLI_PROFILE) >/dev/null 2>&1
 	@echo "Stack deployment complete"
+
+## Sync Knowledge Base documents to OpenSearch
+knowledge-base-sync:
+	@echo "Fetching Knowledge Base ID and Data Source ID"
+	$(eval KNOWLEDGE_BASE_ID := $(shell aws cloudformation describe-stacks \
+  		--stack-name $(STACK_NAME) \
+		--region $(REGION) \
+		--query "Stacks[0].Outputs[?OutputKey=='KnowledgeBaseId'].OutputValue" \
+		--output text \
+		$(AWS_CLI_PROFILE)))
+	$(eval DATA_SOURCE_ID := $(shell aws cloudformation describe-stacks \
+  		--stack-name $(STACK_NAME) \
+		--region $(REGION) \
+		--query "Stacks[0].Outputs[?OutputKey=='DataSourceId'].OutputValue" \
+		--output text \
+		$(AWS_CLI_PROFILE) | cut -d'|' -f2))
+
+	@echo "Starting Knowledge Base sync..."
+	$(eval JOB_ID := $(shell aws bedrock-agent start-ingestion-job \
+		--knowledge-base-id $(KNOWLEDGE_BASE_ID) \
+		--data-source-id $(DATA_SOURCE_ID) \
+		--region $(REGION) \
+		--query 'ingestionJob.ingestionJobId' \
+		--output text \
+		$(AWS_CLI_PROFILE)))
+	@while true; do \
+		JOB_STATUS=$$(aws bedrock-agent get-ingestion-job \
+			--knowledge-base-id $(KNOWLEDGE_BASE_ID) \
+			--data-source-id $(DATA_SOURCE_ID) \
+			--ingestion-job-id $(JOB_ID) \
+			--region $(REGION) \
+			--query 'ingestionJob.status' \
+			--output text \
+			$(AWS_CLI_PROFILE)); \
+		if [ "$$JOB_STATUS" = "COMPLETE" ]; then \
+			break; \
+		fi; \
+		if [ "$$JOB_STATUS" = "FAILED" ]; then \
+			echo "ERROR: Knowledge Base sync failed!"; \
+			break; \
+		fi; \
+		sleep 5; \
+	done
+	@echo "Knowledge Base sync completed"
 
 ## Build function code and dependencies
 build:
@@ -123,5 +167,5 @@ api-endpoint:
 		--region $(REGION) \
 		--query 'Stacks[0].Outputs[?OutputKey==`BedrockApiEndpoint`].OutputValue' \
 		--output text \
-	$(AWS_CLI_PROFILE)
+		$(AWS_CLI_PROFILE)
 
