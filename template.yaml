@@ -2,10 +2,6 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: RAG Knowledge Base with OpenSearch and Bedrock
 
 Parameters:
-  Version:
-    Description: Application version
-    Type: String
-  
   ApiVersion:
     Description: Version of the API
     Type: String
@@ -17,6 +13,14 @@ Parameters:
 
   StackName:
     Description: Name of the stack
+    Type: String
+  
+  Application:
+    Description: Name of the application
+    Type: String
+  
+  Owner:
+    Description: Owner of the application
     Type: String
   
   OpenSearchInstanceCount:
@@ -129,8 +133,12 @@ Resources:
       Tags:
         - Key: Environment
           Value: !Ref Environment
-        - Key: Version
-          Value: !Ref Version
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: Appplication
+          Value: !Ref Application
+        - Key: Owner
+          Value: !Ref Owner
 
   OpenSearchLogGroup:
     Type: AWS::Logs::LogGroup
@@ -140,8 +148,12 @@ Resources:
       Tags:
         - Key: Environment
           Value: !Ref Environment
-        - Key: Version
-          Value: !Ref Version
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: Appplication
+          Value: !Ref Application
+        - Key: Owner
+          Value: !Ref Owner
 
   IndexCreatorLogGroup:
     Type: AWS::Logs::LogGroup
@@ -151,8 +163,12 @@ Resources:
       Tags:
         - Key: Environment
           Value: !Ref Environment
-        - Key: Version
-          Value: !Ref Version
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: Appplication
+          Value: !Ref Application
+        - Key: Owner
+          Value: !Ref Owner
 
   OpenSearchLogResourcePolicy:
     Type: AWS::Logs::ResourcePolicy
@@ -232,8 +248,12 @@ Resources:
       Tags:
         - Key: Environment
           Value: !Ref Environment
-        - Key: Version
-          Value: !Ref Version
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: Appplication
+          Value: !Ref Application
+        - Key: Owner
+          Value: !Ref Owner
 
   IndexCreatorRole:
     Type: AWS::IAM::Role
@@ -273,8 +293,12 @@ Resources:
       Tags:
         - Key: Environment
           Value: !Ref Environment
-        - Key: Version
-          Value: !Ref Version
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: Appplication
+          Value: !Ref Application
+        - Key: Owner
+          Value: !Ref Owner
 
   OpenSearchDomain:
     Type: AWS::OpenSearchService::Domain
@@ -353,8 +377,12 @@ Resources:
       Tags:
         - Key: Environment
           Value: !Ref Environment
-        - Key: Version
-          Value: !Ref Version
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: Appplication
+          Value: !Ref Application
+        - Key: Owner
+          Value: !Ref Owner
 
   IndexCreatorFunction:
     Type: AWS::Lambda::Function
@@ -451,8 +479,12 @@ Resources:
       Tags:
         - Key: Environment
           Value: !Ref Environment
-        - Key: Version
-          Value: !Ref Version
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: Appplication
+          Value: !Ref Application
+        - Key: Owner
+          Value: !Ref Owner
       ReservedConcurrentExecutions: 1
   
   CreateIndex:
@@ -488,7 +520,9 @@ Resources:
       RoleArn: !GetAtt BedrockKnowledgeBaseRole.Arn
       Tags:
         Environment: !Ref Environment
-        Version: !Ref Version
+        ManagedBy: CloudFormation
+        Appplication: !Ref Application
+        Owner: !Ref Owner
 
   BedrockDataSource:
     Type: "AWS::Bedrock::DataSource"
@@ -524,8 +558,12 @@ Resources:
       Tags:
         - Key: Environment
           Value: !Ref Environment
-        - Key: Version
-          Value: !Ref Version
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: Appplication
+          Value: !Ref Application
+        - Key: Owner
+          Value: !Ref Owner
       
   LambdaBedrockPolicy:
     Type: AWS::IAM::RolePolicy
@@ -567,8 +605,12 @@ Resources:
       Tags:
         - Key: Environment
           Value: !Ref Environment
-        - Key: Version
-          Value: !Ref Version
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: Appplication
+          Value: !Ref Application
+        - Key: Owner
+          Value: !Ref Owner
 
   BedrockFunction:
     Type: AWS::Lambda::Function
@@ -601,8 +643,12 @@ Resources:
       Tags:
         - Key: Environment
           Value: !Ref Environment
-        - Key: Version
-          Value: !Ref Version
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: Appplication
+          Value: !Ref Application
+        - Key: Owner
+          Value: !Ref Owner
               
   BedrockApi:
     Type: AWS::ApiGatewayV2::Api
@@ -622,7 +668,9 @@ Resources:
         MaxAge: 300
       Tags:
         Environment: !Ref Environment
-        Version: !Ref Version
+        ManagedBy: CloudFormation
+        Appplication: !Ref Application
+        Owner: !Ref Owner
               
   BedrockApiStage:
     Type: AWS::ApiGatewayV2::Stage
@@ -637,7 +685,9 @@ Resources:
           ThrottlingBurstLimit: 20
       Tags:
         Environment: !Ref Environment
-        Version: !Ref Version
+        ManagedBy: CloudFormation
+        Appplication: !Ref Application
+        Owner: !Ref Owner
 
   BedrockAuthorizer:
     Type: AWS::ApiGatewayV2::Authorizer
