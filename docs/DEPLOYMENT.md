@@ -9,24 +9,9 @@
 
 ## Quick Deployment
 
-### 1. Configure Environment
-```bash
-cp config/config.example.env config/config.<env>.env
-# Edit config.<env>.env with your settings
-```
-
-### 2. Deploy Stack
 ```bash
 make all ENV=<env>
 ```
-
-### 3. Get API Endpoint
-```bash
-make api-endpoint ENV=<env>
-```
-
-### 4. Manual Sync Required
-⚠️ After deployment, you must manually sync your S3 documents to the Bedrock Knowledge Base using AWS Console or AWS CLI.
 
 ## Available Commands
 
@@ -35,14 +20,15 @@ make api-endpoint ENV=<env>
 make all ENV=<env>
 
 # Individual operations
-make clean                    # Clean build artifacts
-make check-aws               # Verify AWS credentials
-make validate                # Validate CloudFormation template
-make deploy ENV=<env>        # Deploy infrastructure
-make build                   # Build Lambda package
-make update-function ENV=<env> # Update Lambda code only
-make status ENV=<env>        # Show stack status
-make api-endpoint ENV=<env>  # Display API endpoint URL
+make clean                      # Clean build artifacts
+make check-aws                  # Verify AWS credentials
+make validate                   # Validate CloudFormation template
+make deploy ENV=<env>           # Deploy infrastructure
+make knowledge-base-sync        # Sync Knowledge Base
+make build                      # Build Lambda package
+make update-function ENV=<env>  # Update Lambda code only
+make status ENV=<env>           # Show stack status
+make api-endpoint ENV=<env>     # Display API endpoint URL
 ```
 
 ## Usage Examples

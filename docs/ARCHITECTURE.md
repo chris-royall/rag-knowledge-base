@@ -4,9 +4,6 @@
 
 ```mermaid
 graph TB
-    %% Sync Process
-    Sync[⚠️ Action Required<br/>Sync S3 to OpenSearch]
-    
     %% User and External
     User[👤 User] --> API[🌐 API Gateway<br/>HTTP API]
     Docs[📄 Knowledge Base<br/>Documents] --> S3[🪣 S3 Bucket<br/>Document Storage]
@@ -34,9 +31,6 @@ graph TB
     OpenSearch -.-> CloudWatch
     Bedrock -.-> CloudWatch
     
-    %% Manual Sync Connections
-    Sync -.-> Bedrock
-    
     %% Styling
     classDef userClass fill:#e1f5fe,stroke:#01579b,stroke-width:2px
     classDef awsService fill:#fff3e0,stroke:#e65100,stroke-width:2px
@@ -44,7 +38,6 @@ graph TB
     classDef storage fill:#e8f5e8,stroke:#1b5e20,stroke-width:2px
     classDef monitoring fill:#ffebee,stroke:#b71c1c,stroke-width:2px
     classDef docsClass fill:#fff9c4,stroke:#f57f17,stroke-width:2px
-    classDef manualClass fill:#ffcdd2,stroke:#d32f2f,stroke-width:2px
     
     class User userClass
     class API,Lambda,IndexCreator awsService
@@ -52,7 +45,6 @@ graph TB
     class S3,OpenSearch storage
     class CloudWatch monitoring
     class Docs docsClass
-    class Sync manualClass
 ```
 
 ## AWS Services Implementation
@@ -91,13 +83,12 @@ The CloudFormation template includes built-in validation:
 
 ### 1. Document Ingestion Flow
 ```
-S3 Documents → Manual Sync Trigger → Bedrock Knowledge Base → 
-Embedding Model Processing → Vector Storage in OpenSearch Index
+S3 Documents → Bedrock Knowledge Base → Embedding Model Processing → Vector Storage in OpenSearch Index
 ```
 
 **Detailed Steps:**
 1. Documents uploaded to S3 bucket (must be done manually or via separate process)
-2. **Manual sync required**: User triggers sync in AWS Console (Bedrock → Knowledge bases → Data source → Sync)
+2. Bedrock Knowledge Base Sync triggered automatically
 3. Bedrock Data Source reads documents from S3
 4. Documents chunked into 512-token segments with 20% overlap
 5. Embedding model converts text chunks to 1024-dimensional vectors
@@ -105,8 +96,7 @@ Embedding Model Processing → Vector Storage in OpenSearch Index
 
 ### 2. Query Processing Flow
 ```
-User Question → API Gateway → Lambda Function → Bedrock Knowledge Base → 
-OpenSearch Vector Search → Context Retrieval → LLM Generation → Response
+User Question → API Gateway → Lambda Function → Bedrock Knowledge Base → OpenSearch Vector Search → Context Retrieval → LLM Generation → Response
 ```
 
 **Detailed Steps:**
@@ -123,8 +113,7 @@ OpenSearch Vector Search → Context Retrieval → LLM Generation → Response
 
 ### 3. Infrastructure Deployment Flow
 ```
-CloudFormation Template → Resource Creation → Index Creator Lambda Execution → 
-OpenSearch Index Setup → Bedrock Knowledge Base Configuration
+CloudFormation Template → Resource Creation → Index Creator Lambda Execution → OpenSearch Index Setup → Bedrock Knowledge Base Sync → Update Lambda Function Code → Fetch API Endpoint
 ```
 
 **Detailed Steps:**
@@ -132,7 +121,8 @@ OpenSearch Index Setup → Bedrock Knowledge Base Configuration
 2. Index Creator Lambda automatically executes as Custom Resource
 3. Creates optimized OpenSearch index with proper vector field mappings
 4. Bedrock Knowledge Base configured to use the created index
-5. All services connected with appropriate IAM permissions
+5. Bedrock Knowledge Base automatically syncs S3 documents during deployment
+6. All services connected with appropriate IAM permissions
 
 ## Security Features
 

@@ -742,6 +742,12 @@ Outputs:
     Export:
       Name: !Sub '${AWS::StackName}-KnowledgeBaseId'
 
+  DataSourceId:
+    Description: Bedrock Data Source ID
+    Value: !Ref BedrockDataSource
+    Export:
+      Name: !Sub '${AWS::StackName}-DataSourceId'
+
   BedrockFunctionArn:
     Description: Bedrock Function ARN
     Value: !GetAtt BedrockFunction.Arn
